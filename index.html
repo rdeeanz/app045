@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fruit Catcher AR</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(180deg, #87CEEB 0%, #E0F6FF 50%, #98FB98 100%);
+        }
+
+        #game-container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+
+        #game-canvas {
+            display: block;
+        }
+
+        #video {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 160px;
+            height: 120px;
+            border-radius: 10px;
+            border: 3px solid #fff;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            transform: scaleX(-1);
+            z-index: 100;
+            display: none;
+        }
+
+        /* HUD */
+        #hud {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 100;
+            display: none;
+        }
+
+        .hud-item {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            padding: 12px 20px;
+            border-radius: 15px;
+            margin-bottom: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            font-weight: 600;
+            font-size: 18px;
+        }
+
+        #score {
+            color: #FF6B35;
+        }
+
+        #lives {
+            color: #E63946;
+        }
+
+        #input-status {
+            color: #2A9D8F;
+            font-size: 14px;
+        }
+
+        /* Overlays */
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(8px);
+            z-index: 200;
+        }
+
+        .overlay-content {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 50px 80px;
+            border-radius: 30px;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            color: white;
+            animation: slideIn 0.5s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateY(-50px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .overlay h1 {
+            font-size: 48px;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .overlay h2 {
+            font-size: 36px;
+            margin-bottom: 15px;
+        }
+
+        .overlay p {
+            font-size: 18px;
+            margin-bottom: 30px;
+            opacity: 0.9;
+        }
+
+        .overlay button {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            border: none;
+            padding: 18px 50px;
+            font-size: 22px;
+            font-weight: bold;
+            color: white;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 10px 30px rgba(245, 87, 108, 0.4);
+        }
+
+        .overlay button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 15px 40px rgba(245, 87, 108, 0.5);
+        }
+
+        .instructions {
+            font-size: 14px !important;
+            margin-top: 20px;
+            opacity: 0.8 !important;
+            max-width: 350px;
+        }
+
+        #final-score {
+            font-size: 64px;
+            font-weight: bold;
+            color: #FFD700;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        /* Emoji decorations */
+        .emoji-deco {
+            font-size: 40px;
+            margin: 0 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <video id="video" autoplay playsinline></video>
+        
+        <!-- HUD -->
+        <div id="hud">
+            <div class="hud-item" id="score">🍎 Score: 0</div>
+            <div class="hud-item" id="lives">❤️ Lives: 3</div>
+            <div class="hud-item" id="input-status">📷 Initializing...</div>
+        </div>
+
+        <!-- Start Screen -->
+        <div id="start-screen" class="overlay">
+            <div class="overlay-content">
+                <h1><span class="emoji-deco">🍎</span>Fruit Catcher AR<span class="emoji-deco">🍌</span></h1>
+                <p>Catch the falling fruits with your basket!</p>
+                <button id="start-btn">▶ Start Game</button>
+                <p class="instructions">
+                    Use your hand (index finger) or mouse to move the basket.
+                    Catch fruits for points, avoid bombs!
+                </p>
+            </div>
+        </div>
+
+        <!-- Game Over Screen -->
+        <div id="gameover-screen" class="overlay hidden">
+            <div class="overlay-content">
+                <h2>💥 Game Over! 💥</h2>
+                <p>Your Score:</p>
+                <div id="final-score">0</div>
+                <button id="restart-btn">🔄 Play Again</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MediaPipe Dependencies -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675465747/camera_utils.min.js"></script>
+
+    <!-- Three.js Import Map -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+
+        // ==================== GAME CONFIGURATION ====================
+        const CONFIG = {
+            initialFallSpeed: 0.04,
+            maxFallSpeed: 0.15,
+            spawnInterval: 1500,
+            minSpawnInterval: 500,
+            speedIncreasePerScore: 0.002,
+            bombChance: 0.2,
+            fruitPoints: 10,
+            initialLives: 3,
+            basketWidth: 2,
+            basketHeight: 1,
+            playFieldWidth: 12,
+            playFieldHeight: 10
+        };
+
+        // ==================== GAME STATE ====================
+        let gameState = {
+            score: 0,
+            lives: CONFIG.initialLives,
+            isPlaying: false,
+            fallSpeed: CONFIG.initialFallSpeed,
+            spawnInterval: CONFIG.spawnInterval,
+            inputMode: 'initializing',
+            handX: 0.5,
+            mouseX: 0.5
+        };
+
+        // ==================== DOM ELEMENTS ====================
+        const video = document.getElementById('video');
+        const hud = document.getElementById('hud');
+        const scoreEl = document.getElementById('score');
+        const livesEl = document.getElementById('lives');
+        const inputStatusEl = document.getElementById('input-status');
+        const startScreen = document.getElementById('start-screen');
+        const gameoverScreen = document.getElementById('gameover-screen');
+        const finalScoreEl = document.getElementById('final-score');
+        const startBtn = document.getElementById('start-btn');
+        const restartBtn = document.getElementById('restart-btn');
+
+        // ==================== THREE.JS SETUP ====================
+        const scene = new THREE.Scene();
+        
+        // Create gradient background
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+        const gradient = ctx.createLinearGradient(0, 0, 0, 256);
+        gradient.addColorStop(0, '#87CEEB');
+        gradient.addColorStop(0.5, '#B0E0E6');
+        gradient.addColorStop(1, '#98FB98');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, 256, 256);
+        const backgroundTexture = new THREE.CanvasTexture(canvas);
+        scene.background = backgroundTexture;
+
+        // Camera setup
+        const aspect = window.innerWidth / window.innerHeight;
+        const camera = new THREE.PerspectiveCamera(60, aspect, 0.1, 100);
+        camera.position.set(0, 0, 12);
+        camera.lookAt(0, 0, 0);
+
+        // Renderer
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        document.getElementById('game-container').appendChild(renderer.domElement);
+        renderer.domElement.id = 'game-canvas';
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(5, 10, 7);
+        directionalLight.castShadow = true;
+        scene.add(directionalLight);
+
+        // ==================== BASKET CREATION ====================
+        const basket = new THREE.Group();
+
+        // Basket base
+        const baseGeometry = new THREE.BoxGeometry(CONFIG.basketWidth, 0.8, 1);
+        const baseMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x8B4513,
+            roughness: 0.7
+        });
+        const base = new THREE.Mesh(baseGeometry, baseMaterial);
+        base.position.y = 0;
+        basket.add(base);
+
+        // Basket rim (torus)
+        const rimGeometry = new THREE.TorusGeometry(CONFIG.basketWidth / 2 - 0.1, 0.08, 8, 24);
+        const rimMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0xA0522D,
+            roughness: 0.5
+        });
+        const rim = new THREE.Mesh(rimGeometry, rimMaterial);
+        rim.rotation.x = Math.PI / 2;
+        rim.position.y = 0.4;
+        basket.add(rim);
+
+        // Basket weave pattern (decorative lines)
+        const weaveGeometry = new THREE.CylinderGeometry(0.03, 0.03, 0.8, 8);
+        const weaveMaterial = new THREE.MeshStandardMaterial({ color: 0x654321 });
+        for (let i = -3; i <= 3; i++) {
+            const weave = new THREE.Mesh(weaveGeometry, weaveMaterial);
+            weave.position.x = i * 0.25;
+            weave.position.y = 0;
+            weave.position.z = 0.51;
+            basket.add(weave);
+        }
+
+        // Basket handles
+        const handleGeometry = new THREE.TorusGeometry(0.4, 0.06, 8, 16, Math.PI);
+        const handleMaterial = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
+        
+        const leftHandle = new THREE.Mesh(handleGeometry, handleMaterial);
+        leftHandle.position.set(-CONFIG.basketWidth / 2 + 0.1, 0.2, 0);
+        leftHandle.rotation.z = Math.PI / 2;
+        leftHandle.rotation.y = Math.PI / 2;
+        basket.add(leftHandle);
+
+        const rightHandle = new THREE.Mesh(handleGeometry, handleMaterial);
+        rightHandle.position.set(CONFIG.basketWidth / 2 - 0.1, 0.2, 0);
+        rightHandle.rotation.z = -Math.PI / 2;
+        rightHandle.rotation.y = Math.PI / 2;
+        basket.add(rightHandle);
+
+        basket.position.y = -4;
+        scene.add(basket);
+
+        // ==================== FALLING OBJECTS ====================
+        const fallingObjects = [];
+
+        function createApple() {
+            const group = new THREE.Group();
+            
+            // Apple body
+            const bodyGeometry = new THREE.SphereGeometry(0.4, 16, 16);
+            const bodyMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0xE53935,
+                roughness: 0.3
+            });
+            const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+            group.add(body);
+
+            // Stem
+            const stemGeometry = new THREE.CylinderGeometry(0.03, 0.03, 0.2, 8);
+            const stemMaterial = new THREE.MeshStandardMaterial({ color: 0x5D4037 });
+            const stem = new THREE.Mesh(stemGeometry, stemMaterial);
+            stem.position.y = 0.4;
+            group.add(stem);
+
+            // Leaf
+            const leafGeometry = new THREE.SphereGeometry(0.12, 8, 4);
+            const leafMaterial = new THREE.MeshStandardMaterial({ color: 0x4CAF50 });
+            const leaf = new THREE.Mesh(leafGeometry, leafMaterial);
+            leaf.position.set(0.1, 0.45, 0);
+            leaf.scale.set(1, 0.3, 0.5);
+            group.add(leaf);
+
+            group.userData = { type: 'fruit', points: CONFIG.fruitPoints };
+            return group;
+        }
+
+        function createBanana() {
+            const group = new THREE.Group();
+            
+            // Banana body (curved using capsule)
+            const bodyGeometry = new THREE.CapsuleGeometry(0.15, 0.6, 8, 16);
+            const bodyMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0xFFEB3B,
+                roughness: 0.4
+            });
+            const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+            body.rotation.z = Math.PI / 6;
+            group.add(body);
+
+            // Banana tip
+            const tipGeometry = new THREE.ConeGeometry(0.1, 0.15, 8);
+            const tipMaterial = new THREE.MeshStandardMaterial({ color: 0x8D6E63 });
+            const tip = new THREE.Mesh(tipGeometry, tipMaterial);
+            tip.position.set(-0.2, -0.4, 0);
+            tip.rotation.z = Math.PI / 6;
+            group.add(tip);
+
+            group.userData = { type: 'fruit', points: CONFIG.fruitPoints };
+            return group;
+        }
+
+        function createOrange() {
+            const group = new THREE.Group();
+            
+            // Orange body
+            const bodyGeometry = new THREE.SphereGeometry(0.38, 16, 16);
+            const bodyMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0xFF9800,
+                roughness: 0.4
+            });
+            const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+            group.add(body);
+
+            // Stem nub
+            const nubGeometry = new THREE.CylinderGeometry(0.06, 0.08, 0.08, 8);
+            const nubMaterial = new THREE.MeshStandardMaterial({ color: 0x4CAF50 });
+            const nub = new THREE.Mesh(nubGeometry, nubMaterial);
+            nub.position.y = 0.35;
+            group.add(nub);
+
+            group.userData = { type: 'fruit', points: CONFIG.fruitPoints };
+            return group;
+        }
+
+        function createBomb() {
+            const group = new THREE.Group();
+            
+            // Bomb body
+            const bodyGeometry = new THREE.SphereGeometry(0.4, 16, 16);
+            const bodyMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0x212121,
+                roughness: 0.2,
+                metalness: 0.8
+            });
+            const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+            group.add(body);
+
+            // Fuse
+            const fuseGeometry = new THREE.CylinderGeometry(0.04, 0.04, 0.25, 8);
+            const fuseMaterial = new THREE.MeshStandardMaterial({ color: 0x795548 });
+            const fuse = new THREE.Mesh(fuseGeometry, fuseMaterial);
+            fuse.position.y = 0.5;
+            group.add(fuse);
+
+            // Spark (glowing tip)
+            const sparkGeometry = new THREE.SphereGeometry(0.08, 8, 8);
+            const sparkMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0xFF5722,
+                emissive: 0xFF5722,
+                emissiveIntensity: 2
+            });
+            const spark = new THREE.Mesh(sparkGeometry, sparkMaterial);
+            spark.position.y = 0.65;
+            group.add(spark);
+
+            // Warning X marks
+            const xGeometry = new THREE.BoxGeometry(0.15, 0.04, 0.04);
+            const xMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0xF44336,
+                emissive: 0xF44336,
+                emissiveIntensity: 0.5
+            });
+            
+            const x1 = new THREE.Mesh(xGeometry, xMaterial);
+            x1.rotation.z = Math.PI / 4;
+            x1.position.z = 0.41;
+            group.add(x1);
+
+            const x2 = new THREE.Mesh(xGeometry, xMaterial);
+            x2.rotation.z = -Math.PI / 4;
+            x2.position.z = 0.41;
+            group.add(x2);
+
+            group.userData = { type: 'bomb' };
+            return group;
+        }
+
+        function spawnObject() {
+            if (!gameState.isPlaying) return;
+
+            const isBomb = Math.random() < CONFIG.bombChance;
+            let object;
+
+            if (isBomb) {
+                object = createBomb();
+            } else {
+                const fruitType = Math.floor(Math.random() * 3);
+                switch (fruitType) {
+                    case 0: object = createApple(); break;
+                    case 1: object = createBanana(); break;
+                    case 2: object = createOrange(); break;
+                }
+            }
+
+            // Random X position within play field
+            const xRange = CONFIG.playFieldWidth / 2 - 1;
+            object.position.x = (Math.random() - 0.5) * 2 * xRange;
+            object.position.y = 6;
+            object.position.z = 0;
+
+            // Random rotation
+            object.rotation.z = Math.random() * Math.PI * 2;
+
+            scene.add(object);
+            fallingObjects.push(object);
+        }
+
+        let spawnTimer = null;
+        function startSpawning() {
+            if (spawnTimer) clearInterval(spawnTimer);
+            spawnTimer = setInterval(() => {
+                spawnObject();
+                // Adjust spawn interval as score increases
+                const newInterval = Math.max(
+                    CONFIG.minSpawnInterval, 
+                    CONFIG.spawnInterval - gameState.score * 5
+                );
+                if (newInterval !== gameState.spawnInterval) {
+                    gameState.spawnInterval = newInterval;
+                    clearInterval(spawnTimer);
+                    startSpawning();
+                }
+            }, gameState.spawnInterval);
+        }
+
+        function stopSpawning() {
+            if (spawnTimer) {
+                clearInterval(spawnTimer);
+                spawnTimer = null;
+            }
+        }
+
+        // ==================== COLLISION DETECTION ====================
+        function checkCollisions() {
+            const basketBox = new THREE.Box3().setFromObject(basket);
+            
+            for (let i = fallingObjects.length - 1; i >= 0; i--) {
+                const obj = fallingObjects[i];
+                const objBox = new THREE.Box3().setFromObject(obj);
+
+                // Check if object hit basket
+                if (basketBox.intersectsBox(objBox)) {
+                    if (obj.userData.type === 'fruit') {
+                        gameState.score += obj.userData.points;
+                        updateHUD();
+                        
+                        // Increase difficulty
+                        gameState.fallSpeed = Math.min(
+                            CONFIG.maxFallSpeed,
+                            CONFIG.initialFallSpeed + gameState.score * CONFIG.speedIncreasePerScore
+                        );
+                    } else if (obj.userData.type === 'bomb') {
+                        gameState.lives--;
+                        updateHUD();
+                        
+                        if (gameState.lives <= 0) {
+                            endGame();
+                            return;
+                        }
+                    }
+
+                    // Remove object
+                    scene.remove(obj);
+                    fallingObjects.splice(i, 1);
+                }
+                // Check if object fell below screen
+                else if (obj.position.y < -6) {
+                    scene.remove(obj);
+                    fallingObjects.splice(i, 1);
+                }
+            }
+        }
+
+        // ==================== INPUT HANDLING ====================
+        let hands = null;
+        let cameraStream = null;
+
+        async function initHandTracking() {
+            try {
+                // Request camera
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: 640, height: 480, facingMode: 'user' }
+                });
+                
+                video.srcObject = stream;
+                cameraStream = stream;
+                
+                await new Promise((resolve) => {
+                    video.onloadedmetadata = () => {
+                        video.play();
+                        resolve();
+                    };
+                });
+
+                // Wait for video to have actual dimensions
+                await new Promise((resolve) => {
+                    const checkDimensions = () => {
+                        if (video.videoWidth > 0 && video.videoHeight > 0) {
+                            resolve();
+                        } else {
+                            requestAnimationFrame(checkDimensions);
+                        }
+                    };
+                    checkDimensions();
+                });
+
+                // Initialize MediaPipe Hands
+                hands = new Hands({
+                    locateFile: (file) => {
+                        return `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${file}`;
+                    }
+                });
+
+                hands.setOptions({
+                    maxNumHands: 1,
+                    modelComplexity: 1,
+                    minDetectionConfidence: 0.7,
+                    minTrackingConfidence: 0.5
+                });
+
+                hands.onResults(onHandResults);
+
+                // Start camera loop
+                video.style.display = 'block';
+                gameState.inputMode = 'hand';
+                updateInputStatus();
+                
+                processHandTracking();
+
+            } catch (error) {
+                console.warn('Hand tracking failed, using mouse fallback:', error);
+                fallbackToMouse();
+            }
+        }
+
+        function processHandTracking() {
+            if (gameState.inputMode !== 'hand' || !hands) return;
+            
+            // Safety check: only send frame when video has valid dimensions
+            if (video.videoWidth > 0 && video.videoHeight > 0) {
+                hands.send({ image: video }).then(() => {
+                    requestAnimationFrame(processHandTracking);
+                }).catch((err) => {
+                    console.warn('Hand processing error:', err);
+                    requestAnimationFrame(processHandTracking);
+                });
+            } else {
+                requestAnimationFrame(processHandTracking);
+            }
+        }
+
+        function onHandResults(results) {
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                // Get index finger tip (landmark 8)
+                const indexTip = results.multiHandLandmarks[0][8];
+                // Mirror the x coordinate (video is mirrored)
+                gameState.handX = 1 - indexTip.x;
+            }
+        }
+
+        function fallbackToMouse() {
+            gameState.inputMode = 'mouse';
+            video.style.display = 'none';
+            
+            if (cameraStream) {
+                cameraStream.getTracks().forEach(track => track.stop());
+                cameraStream = null;
+            }
+            
+            updateInputStatus();
+        }
+
+        // Mouse input
+        document.addEventListener('mousemove', (e) => {
+            gameState.mouseX = e.clientX / window.innerWidth;
+        });
+
+        // Touch input for mobile
+        document.addEventListener('touchmove', (e) => {
+            if (e.touches.length > 0) {
+                gameState.mouseX = e.touches[0].clientX / window.innerWidth;
+            }
+        });
+
+        function getInputX() {
+            if (gameState.inputMode === 'hand') {
+                return gameState.handX;
+            }
+            return gameState.mouseX;
+        }
+
+        function updateInputStatus() {
+            if (gameState.inputMode === 'hand') {
+                inputStatusEl.textContent = '✋ Hand Tracking Active';
+                inputStatusEl.style.color = '#4CAF50';
+            } else if (gameState.inputMode === 'mouse') {
+                inputStatusEl.textContent = '🖱️ Mouse Control';
+                inputStatusEl.style.color = '#2196F3';
+            } else {
+                inputStatusEl.textContent = '📷 Initializing...';
+                inputStatusEl.style.color = '#FF9800';
+            }
+        }
+
+        // ==================== GAME STATE MANAGEMENT ====================
+        function updateHUD() {
+            scoreEl.textContent = `🍎 Score: ${gameState.score}`;
+            
+            let heartsDisplay = '';
+            for (let i = 0; i < gameState.lives; i++) {
+                heartsDisplay += '❤️';
+            }
+            for (let i = gameState.lives; i < CONFIG.initialLives; i++) {
+                heartsDisplay += '🖤';
+            }
+            livesEl.textContent = heartsDisplay + ` Lives: ${gameState.lives}`;
+        }
+
+        function startGame() {
+            // Reset state
+            gameState.score = 0;
+            gameState.lives = CONFIG.initialLives;
+            gameState.isPlaying = true;
+            gameState.fallSpeed = CONFIG.initialFallSpeed;
+            gameState.spawnInterval = CONFIG.spawnInterval;
+
+            // Clear existing objects
+            fallingObjects.forEach(obj => scene.remove(obj));
+            fallingObjects.length = 0;
+
+            // Update UI
+            updateHUD();
+            startScreen.classList.add('hidden');
+            gameoverScreen.classList.add('hidden');
+            hud.style.display = 'block';
+
+            // Start spawning
+            startSpawning();
+
+            // Initialize hand tracking if not already
+            if (gameState.inputMode === 'initializing') {
+                initHandTracking();
+            }
+        }
+
+        function endGame() {
+            gameState.isPlaying = false;
+            stopSpawning();
+
+            // Show game over screen
+            finalScoreEl.textContent = gameState.score;
+            gameoverScreen.classList.remove('hidden');
+            hud.style.display = 'none';
+        }
+
+        // Event listeners
+        startBtn.addEventListener('click', startGame);
+        restartBtn.addEventListener('click', startGame);
+
+        // Allow starting with mouse without camera
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'm' || e.key === 'M') {
+                if (gameState.inputMode === 'initializing') {
+                    fallbackToMouse();
+                }
+            }
+        });
+
+        // ==================== ANIMATION LOOP ====================
+        let targetBasketX = 0;
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (gameState.isPlaying) {
+                // Update basket position
+                const inputX = getInputX();
+                const xRange = CONFIG.playFieldWidth / 2 - CONFIG.basketWidth / 2;
+                targetBasketX = (inputX - 0.5) * 2 * xRange;
+                
+                // Smooth movement
+                basket.position.x += (targetBasketX - basket.position.x) * 0.15;
+
+                // Update falling objects
+                for (const obj of fallingObjects) {
+                    obj.position.y -= gameState.fallSpeed;
+                    obj.rotation.z += 0.02;
+                    obj.rotation.x += 0.01;
+                }
+
+                // Check collisions
+                checkCollisions();
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // ==================== WINDOW RESIZE ====================
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // ==================== START ====================
+        animate();
+    </script>
+</body>
+</html>
